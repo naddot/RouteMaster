@@ -71,6 +71,18 @@ function App() {
   // 4. Offline Queue Sync (Global)
   const { queued, isFlushing, online, flushNow } = useQueueSync();
 
+  const [dynamicMapsKey, setDynamicMapsKey] = useState<string>(GOOGLE_MAPS_API_KEY);
+
+  useEffect(() => {
+    const fetchConfig = async () => {
+      const config = await loadRuntimeConfig();
+      if (config.googleMapsApiKey) {
+        setDynamicMapsKey(config.googleMapsApiKey);
+      }
+    };
+    fetchConfig();
+  }, []);
+
   const activeNextStop = stops.find(s => s.status === 'pending' || s.status === 'arrived');
   const activeNextIndex = activeNextStop ? stops.indexOf(activeNextStop) : -1;
 
@@ -188,7 +200,7 @@ function App() {
 
           <div className={`flex-1 h-full relative ${mobileTab === 'list' ? 'hidden lg:block' : 'block'}`}>
             <MapView
-              apiKey={GOOGLE_MAPS_API_KEY}
+              apiKey={dynamicMapsKey}
               stops={stops}
               onRouteCalculated={(res) => {
                 const legs = res.routes[0].legs;

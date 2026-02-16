@@ -29,6 +29,7 @@ app.use(cors({
 
 // Global variable for keys
 let INGEST_API_KEY = process.env.INGEST_API_KEY;
+let GOOGLE_MAPS_API_KEY = process.env.VITE_GOOGLE_MAPS_API_KEY;
 
 // 1. Middleware: Ensure Secret Loaded or Fail Fast
 const ensureIngestKey = async (req, res, next) => {
@@ -75,6 +76,7 @@ const apiProxy = createProxyMiddleware({
 app.get('/api/config', (req, res) => {
   res.json({
     version: "1.0.0",
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
     flags: {
       offlineMode: true,
       enableOptimization: false
@@ -100,13 +102,15 @@ if (process.env.NODE_ENV === 'production' || process.argv.includes('--serve-dist
 async function startServer() {
   console.log("🔐 Initializing secrets...");
   // Pre-load to minimize latency on first request
-  INGEST_API_KEY = await getSecret('ROUTEMASTER_INGEST_API_KEY');
-
-  if (INGEST_API_KEY) {
-    console.log("✅ INGEST_API_KEY loaded.");
-  } else {
-    console.warn("⚠️ INGEST_API_KEY not found on startup. Middleware will attempt lazy fetch.");
+  try {
+    INGEST_API_KEY = await getSecret('ROUTEMASTER_INGEST_API_KEY');
+    GOOGLE_MAPS_API_KEY = await getSecret('ROUTEMASTER_GOOGLE_MAPS_API_KEY');
+  } catch (err) {
+    console.warn("⚠️ Some secrets could not be loaded on startup:", err.message);
   }
+
+  if (INGEST_API_KEY) console.log("✅ INGEST_API_KEY loaded.");
+  if (GOOGLE_MAPS_API_KEY) console.log("✅ GOOGLE_MAPS_API_KEY loaded.");
 
   app.listen(PORT, () => {
     console.log(`🛡️ BFF running on http://localhost:${PORT}`);

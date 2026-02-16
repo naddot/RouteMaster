@@ -1,7 +1,7 @@
 export interface RuntimeConfig {
   VITE_BFF_URL?: string;
   FEATURES?: Record<string, boolean>;
-  // No secrets here!
+  googleMapsApiKey?: string;
 }
 
 let cachedConfig: RuntimeConfig | null = null;

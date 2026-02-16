@@ -113,10 +113,10 @@ function normalizeValue(val, type) {
         const cleaned = val.replace(/[^0-9-]/g, ''); // No dots for integers
         return cleaned ? parseInt(cleaned, 10) : null;
       }
-      return Math.floor(val);
+      return Number.isFinite(val) ? Math.floor(val) : null;
     case 'BOOLEAN':
     case 'BOOL':
-      return !!(val === true || val === 'true' || val === 1 || val === '1');
+      return !!(val === true || val === 'true' || val === 1 || val === '1' || val === 'TRUE');
     case 'STRING':
       return String(val);
   }
@@ -140,7 +140,8 @@ async function insertRows(tableName, rows) {
     }
 
     if (!schema) {
-      safeRows.push({ insertId: row.eventId, json: row });
+      console.error(`🛑 Schema unavailable for ${tableName}; refusing to insert blindly.`);
+      droppedRows.push({ row, error: "Schema unavailable; refusing to insert blindly" });
       continue;
     }
 
@@ -192,8 +193,6 @@ async function insertRows(tableName, rows) {
   if (safeRows.length === 0) return { inserted: 0, dropped: droppedRows.length };
 
   try {
-    // Standard array-based insert. Each item is { insertId, json: { ...Data... } }
-    // The library handles wrapping this into the rows property correctly.
     await table.insert(safeRows, {
       ignoreUnknownValues: false,
       skipInvalidRows: false,
@@ -209,8 +208,8 @@ async function insertRows(tableName, rows) {
     if (err.errors) {
       err.errors.forEach((rowError, idx) => {
         console.error(`  - Row ${idx} Error:`, JSON.stringify(rowError.errors, null, 2));
-        const errorData = safeRows[rowError.row || 0];
-        logToDeadLetter(tableName, errorData.json, rowError.errors).catch(() => { });
+        const errorRow = safeRows[rowError.rowIndex ?? rowError.index ?? idx] ?? safeRows[idx] ?? null;
+        logToDeadLetter(tableName, errorRow, rowError.errors).catch(() => { });
       });
     }
     throw err;
