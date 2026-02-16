@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { DeliveryStop, RouteStatus, UserLocation } from '../types';
 import { INITIAL_MAP_CENTER, DEFAULT_ZOOM } from '../constants';
+import { normalizePostcode } from '../config';
 
 interface MapProps {
   apiKey: string;
@@ -125,15 +126,22 @@ const Map: React.FC<MapProps> = ({
     return pin.element;
   }
 
-  // Refined Directions Location Mapper
-  // Prioritizes placeId > lat/lng > rawAddress > display address string
-  function toDirectionsLocation(stopOrString: DeliveryStop | string): string | google.maps.LatLngLiteral | { placeId: string } {
-    if (typeof stopOrString === "string") return stopOrString;
+  // String input: normalise (postcode-safe) before routing
+  function toDirectionsLocation(
+    stopOrString: DeliveryStop | string
+  ): string | google.maps.LatLngLiteral | { placeId: string } {
+    if (typeof stopOrString === "string") {
+      return normalizePostcode(stopOrString);
+    }
+
     if (stopOrString.placeId) return { placeId: stopOrString.placeId };
+
     if (stopOrString.lat != null && stopOrString.lng != null) {
       return { lat: stopOrString.lat, lng: stopOrString.lng };
     }
-    return stopOrString.rawAddress ?? stopOrString.address;
+
+    const addr = stopOrString.rawAddress ?? stopOrString.address;
+    return typeof addr === "string" ? normalizePostcode(addr) : addr;
   }
 
   // Debounce logic for address inputs
@@ -529,16 +537,45 @@ const Map: React.FC<MapProps> = ({
             onOptimizeOrder(withEtas);
           }
         } else {
-          console.error(`Directions Request Failed: ${status}`, { origin, destination, waypoints });
+          // Log expanded data for debugging
+          const formatLoc = (loc: any) => {
+            if (!loc) return "null";
+            if (typeof loc === 'string') return loc;
+            if (typeof loc.lat === 'function' && typeof loc.lng === 'function') {
+              return `${loc.lat().toFixed(6)}, ${loc.lng().toFixed(6)}`;
+            }
+            if (typeof loc.lat === 'number' && typeof loc.lng === 'number') {
+              return `${loc.lat}, ${loc.lng}`;
+            }
+            return JSON.stringify(loc);
+          };
+
+          console.error(`Directions Request Failed: ${status}`, {
+            origin: formatLoc(origin),
+            destination: formatLoc(destination),
+            waypoints: waypoints?.map(wp => ({
+              ...wp,
+              location: formatLoc(wp.location)
+            }))
+          });
+
+          // Only retry on transient errors (not NOT_FOUND or ZERO_RESULTS)
+          const isTransient = !['NOT_FOUND', 'ZERO_RESULTS', 'INVALID_REQUEST'].includes(status);
           const nextCount = retryCount + 1;
-          if (nextCount < 5) {
+
+          if (isTransient && nextCount < 5) {
             setTimeout(() => {
               setRetryCount(nextCount);
             }, 2000);
           } else {
             setRetryCount(5);
             onStatusChange(RouteStatus.ERROR);
-            onError?.("Manual Review Flagged: One or more addresses could not be located after 5 attempts. Please check manifest accuracy.");
+            const msg = status === 'NOT_FOUND'
+              ? "One or more addresses could not be located. Please check if the postcodes or raw addresses are valid."
+              : status === 'ZERO_RESULTS'
+                ? "No driving route found between these locations."
+                : "Manual Review Flagged: A routing error occurred. Please check manifest accuracy.";
+            onError?.(msg);
           }
         }
       }

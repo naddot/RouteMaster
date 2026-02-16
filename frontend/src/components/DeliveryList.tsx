@@ -23,6 +23,13 @@ interface DeliveryListProps {
   updateStopStatus: (id: string, newStatus: 'pending' | 'completed' | 'failed' | 'arrived') => void;
   enableOptimization?: boolean;
   onFindFuel?: () => void;
+  // Sync Status Props
+  syncStatus?: {
+    online: boolean;
+    queued: number;
+    isFlushing: boolean;
+    flushNow: () => Promise<void>;
+  };
 }
 
 const DeliveryList: React.FC<DeliveryListProps> = ({
@@ -41,7 +48,8 @@ const DeliveryList: React.FC<DeliveryListProps> = ({
   onStartJourney,
   updateStopStatus,
   enableOptimization = true,
-  onFindFuel
+  onFindFuel,
+  syncStatus
 }) => {
   const [inputMode, setInputMode] = useState<'visual' | 'text'>('text');
   const [isResolving, setIsResolving] = useState(false);
@@ -184,9 +192,10 @@ const DeliveryList: React.FC<DeliveryListProps> = ({
             customEndAddress={customEndAddress}
             onSelectEnd={onSelectEnd}
             setStops={(newStops) => {
-              // Wrap raw addresses if coming from AI
+              // Wrap raw addresses and ensure unique IDs if coming from AI
               const wrapped = newStops.map(s => ({
                 ...s,
+                id: s.id || `stop-${crypto.randomUUID()}`,
                 rawAddress: s.rawAddress || s.address
               }));
               setStops(wrapped);
@@ -235,6 +244,33 @@ const DeliveryList: React.FC<DeliveryListProps> = ({
               {isNavigating ? "Finish Workday" : "Start Route"}
             </button>
           )}
+        </div>
+      )}
+      {syncStatus && (
+        <div className="p-3 bg-slate-50 border-t border-slate-200 shrink-0">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <div className={`w-1.5 h-1.5 rounded-full ${syncStatus.online ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                {syncStatus.online ? 'Online' : 'Offline'}
+              </span>
+            </div>
+            {syncStatus.queued > 0 && (
+              <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-md border border-blue-100 italic">
+                {syncStatus.queued} pending
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => void syncStatus.flushNow()}
+            disabled={!syncStatus.online || syncStatus.isFlushing || syncStatus.queued === 0}
+            className={`w-full py-2 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${(!syncStatus.online || syncStatus.isFlushing || syncStatus.queued === 0)
+              ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+              : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm active:scale-95'
+              }`}
+          >
+            {syncStatus.isFlushing ? 'Syncing...' : 'Sync Data Now'}
+          </button>
         </div>
       )}
     </div>

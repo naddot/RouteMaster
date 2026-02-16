@@ -195,6 +195,12 @@ function App() {
               updateStopStatus={updateStopStatus}
               enableOptimization={enableOptimization}
               onFindFuel={findFuel}
+              syncStatus={{
+                online,
+                queued,
+                isFlushing,
+                flushNow
+              }}
             />
           </div>
 
@@ -277,33 +283,6 @@ function App() {
         </div>
       </div>
 
-      {/* Offline Sync Status Widget */}
-      <div className="fixed bottom-4 right-4 bg-white p-3 rounded-lg shadow-lg border border-slate-200 z-[9999] text-xs font-mono min-w-[140px]">
-        <div className="flex items-center gap-2 mb-2">
-          <div className={`w-2 h-2 rounded-full ${online ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="font-bold">{online ? 'ONLINE' : 'OFFLINE'}</span>
-        </div>
-        <div className="space-y-1 text-slate-600">
-          <div className="flex justify-between">
-            <span>Queued:</span>
-            <span className="font-bold">{queued}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Status:</span>
-            <span>{isFlushing ? 'Syncing...' : 'Idle'}</span>
-          </div>
-        </div>
-        <button
-          onClick={() => void flushNow()}
-          disabled={!online || isFlushing || queued === 0}
-          className={`mt-2 w-full py-1 px-2 rounded font-bold text-center transition-colors ${(!online || isFlushing || queued === 0)
-            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-            : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-        >
-          {isFlushing ? 'Syncing...' : 'Sync Now'}
-        </button>
-      </div>
     </div>
   );
 }
