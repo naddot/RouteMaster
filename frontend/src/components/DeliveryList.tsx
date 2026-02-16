@@ -60,7 +60,10 @@ const DeliveryList: React.FC<DeliveryListProps> = ({
   };
 
   const handleResolve = async () => {
-    if (!window.google?.maps?.places) return;
+    if (!window.google?.maps?.places) {
+      alert("Google Maps Places library is not loaded. Please checking your configuration (VITE_GOOGLE_PLACES_ENABLED).");
+      return;
+    }
     setIsResolving(true);
 
     // Create a dummy div for PlacesService as it requires a map or a container
