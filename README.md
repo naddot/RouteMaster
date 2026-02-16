@@ -28,15 +28,16 @@ Prod: Browser -> BFF (Static+API) -> Backend
         *   Serves the static frontend in production.
 
 3.  **Backend (`/backend`)**
-    *   **Stack**: Google Cloud Functions (Node.js).
+    *   **Stack**: Google Cloud Functions (Node.js 22).
     *   **Role**: Business Logic & Ingestion.
     *   **Responsibilities**:
-        *   Streams telemetry to BigQuery (via `/`).
-        *   Talks to Google Gen AI via `/gemini/*`.
+        *   Streams telemetry to BigQuery (optimized with Schema Caching).
+        *   **Dead Letter Queue**: Local persistence for failed ingestion rows.
+        *   **AI Integration**: Powered by Gemini 2.5 Flash.
         *   **Exposes**:
-            *   `/` → Ingest Handler
-            *   `/gemini/parse` → Manifest Parser
-            *   `/gemini/fuel` → Fuel Finder
+            *   `/` → Data ingestion (Jobs, Shifts, GPS, Intended Routes).
+            *   `/gemini/parse` → Intelligent manifest parser.
+            *   `/gemini/fuel` → Location-aware fuel station finder.
 
 ## 🚀 Getting Started
 
