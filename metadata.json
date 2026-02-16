@@ -1,0 +1,7 @@
+{
+  "name": "RouteMaster Logistics WIP",
+  "description": "Intelligent delivery route planner with live traffic optimization.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
