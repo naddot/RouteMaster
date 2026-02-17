@@ -148,6 +148,25 @@ function App() {
     }
   };
 
+  const handleJourneyToggle = async () => {
+    if (isNavigating) {
+      // ENDING SHIFT
+      // 1. Stop tracking (stop interval, send shift end telemetry)
+      toggleJourney();
+
+      // 2. Flush all data to BigQuery
+      if (flushNow) {
+        await flushNow();
+      }
+
+      // 3. Hard Reload to reset state for next day
+      window.location.reload();
+    } else {
+      // STARTING SHIFT
+      toggleJourney();
+    }
+  };
+
   return (
     <div className="relative h-screen w-full overflow-hidden">
       <div className="flex flex-col h-full w-full bg-slate-50 lg:flex-row">
@@ -191,7 +210,7 @@ function App() {
               }}
               onToggleStartLocation={() => setStartFromUserLocation(!startFromUserLocation)}
               isNavigating={isNavigating}
-              onStartJourney={toggleJourney}
+              onStartJourney={handleJourneyToggle}
               updateStopStatus={updateStopStatus}
               enableOptimization={enableOptimization}
               onFindFuel={findFuel}

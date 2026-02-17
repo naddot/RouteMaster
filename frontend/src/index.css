@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+gmp-place-autocomplete {
+    --gmp-place-autocomplete-background: #ffffff !important;
+    --gmp-place-autocomplete-color: #0f172a !important;
+    --gmp-place-autocomplete-border-color: transparent !important;
+    --gmp-place-autocomplete-border-radius: 0.5rem !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 0.875rem;
+}

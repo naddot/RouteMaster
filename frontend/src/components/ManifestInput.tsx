@@ -43,7 +43,7 @@ export const ManifestInput: React.FC<ManifestInputProps> = ({
                     placeholder="Where do you finish your day?"
                     initialValue={customEndAddress}
                     onSelect={(p) => onSelectEnd?.(p)}
-                    className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
                 />
             </div>
             <div className="space-y-2">

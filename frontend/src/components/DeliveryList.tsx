@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { useGoogleMaps } from '../hooks/useGoogleMaps';
 import { DeliveryStop, RouteStatus, RouteStats } from '../types';
 import { ManifestInput } from './ManifestInput';
 import { StopItem } from './StopItem';
@@ -51,8 +52,10 @@ const DeliveryList: React.FC<DeliveryListProps> = ({
   onFindFuel,
   syncStatus
 }) => {
+  const { mode, google } = useGoogleMaps();
   const [inputMode, setInputMode] = useState<'visual' | 'text'>('text');
   const [isResolving, setIsResolving] = useState(false);
+  const resolutionCache = React.useRef<Map<string, PlaceSelection>>(new Map());
 
   const clearStops = () => {
     setStops([]);
@@ -60,65 +63,107 @@ const DeliveryList: React.FC<DeliveryListProps> = ({
   };
 
   const handleResolve = async () => {
-    if (!window.google?.maps?.places) {
-      alert("Google Maps Places library is not loaded. Please checking your configuration (VITE_GOOGLE_PLACES_ENABLED).");
+    if (mode !== 'places' || !google) {
+      alert("Google Maps Places library is not loaded. Please check your configuration.");
       return;
     }
     setIsResolving(true);
 
-    // Create a dummy div for PlacesService as it requires a map or a container
-    const dummyDiv = document.createElement('div');
-    const service = new google.maps.places.PlacesService(dummyDiv);
+    try {
+      const lib = await google.maps.importLibrary("places") as any;
+      const Place = lib.Place;
+      const unresolvedStops = stops.filter(s => !s.placeId && !s.isUnrecognized && s.status === 'pending');
+      const newStops = [...stops];
 
-    const unresolvedStops = stops.filter(s => !s.placeId && !s.isUnrecognized && s.status === 'pending');
-    const newStops = [...stops];
+      // Process in chunks of 3 to respect rate limits
+      const CHUNK_SIZE = 3;
+      for (let i = 0; i < unresolvedStops.length; i += CHUNK_SIZE) {
+        const chunk = unresolvedStops.slice(i, i + CHUNK_SIZE);
 
-    for (const stop of unresolvedStops) {
-      const idx = newStops.findIndex(s => s.id === stop.id);
-      if (idx === -1) continue;
+        await Promise.all(chunk.map(async (stop) => {
+          const query = (stop.rawAddress || stop.address)?.trim();
+          if (!query) return;
 
-      try {
-        const result = await new Promise<PlaceSelection | null>((resolve) => {
-          service.findPlaceFromQuery({
-            query: stop.rawAddress || stop.address,
-            fields: ["place_id", "formatted_address", "geometry"]
-          }, (results, status) => {
-            if (status === google.maps.places.PlacesServiceStatus.OK && results?.[0]) {
-              const r = results[0];
-              resolve({
-                rawAddress: stop.rawAddress || stop.address,
-                placeId: r.place_id,
-                formattedAddress: r.formatted_address,
-                lat: r.geometry?.location?.lat(),
-                lng: r.geometry?.location?.lng()
-              });
-            } else {
-              resolve(null);
+          const cacheKey = query.toLowerCase();
+
+          // Check cache first
+          if (resolutionCache.current.has(cacheKey)) {
+            const cached = resolutionCache.current.get(cacheKey)!;
+            const idx = newStops.findIndex(s => s.id === stop.id);
+            if (idx !== -1) {
+              newStops[idx] = {
+                ...newStops[idx],
+                ...cached,
+                address: cached.formattedAddress || newStops[idx].address
+              };
             }
-          });
-        });
+            return;
+          }
 
-        if (result) {
-          newStops[idx] = {
-            ...newStops[idx],
-            placeId: result.placeId,
-            lat: result.lat,
-            lng: result.lng,
-            formattedAddress: result.formattedAddress,
-            address: result.formattedAddress || newStops[idx].address,
-            rawAddress: result.rawAddress
-          };
+          try {
+            // searchByText
+            const { places } = await Place.searchByText({
+              textQuery: query,
+              fields: ['location', 'formattedAddress', 'id'],
+              isOpenNow: false, // Don't restrict
+            });
+
+            if (places && places.length > 0) {
+              const topResult = places[0];
+
+              // "High confidence" check: has location + address
+              if (topResult.location && topResult.formattedAddress) {
+                const selection: PlaceSelection = {
+                  rawAddress: query,
+                  placeId: topResult.id,
+                  formattedAddress: topResult.formattedAddress,
+                  lat: topResult.location.lat(),
+                  lng: topResult.location.lng()
+                };
+
+                // Update cache
+                resolutionCache.current.set(cacheKey, selection);
+
+                // Update stop
+                const idx = newStops.findIndex(s => s.id === stop.id);
+                if (idx !== -1) {
+                  newStops[idx] = {
+                    ...newStops[idx],
+                    placeId: selection.placeId,
+                    lat: selection.lat,
+                    lng: selection.lng,
+                    formattedAddress: selection.formattedAddress,
+                    address: selection.formattedAddress || newStops[idx].address,
+                    // keep rawAddress
+                  };
+                }
+              }
+            } else {
+              // Mark as unrecognized? For now just leave it pending/failed
+              console.warn(`No results found for: ${query}`);
+            }
+          } catch (err: any) {
+            console.error("Error resolving stop:", stop.id, err);
+            if (err.message && err.message.includes("OVER_QUERY_LIMIT")) {
+              // If we hit limits, maybe pause longer?
+              await new Promise(r => setTimeout(r, 1000));
+            }
+          }
+        }));
+
+        // Gentle delay between chunks
+        if (i + CHUNK_SIZE < unresolvedStops.length) {
+          await new Promise(r => setTimeout(r, 600)); // Increased delay slightly
         }
-
-        // Rate limiting: 200ms delay
-        await new Promise(r => setTimeout(r, 200));
-      } catch (err) {
-        console.error("Resolution error for stop:", stop.id, err);
       }
-    }
 
-    setStops(newStops);
-    setIsResolving(false);
+      setStops(newStops);
+
+    } catch (e) {
+      console.error("Fatal resolution error", e);
+    } finally {
+      setIsResolving(false);
+    }
   };
 
   return (
@@ -243,7 +288,7 @@ const DeliveryList: React.FC<DeliveryListProps> = ({
             </div>
           )}
           {onStartJourney && (
-            <button onClick={onStartJourney} disabled={stops.every(s => s.status === 'completed' || s.status === 'failed')} className={`w-full py-4 rounded-xl font-black text-white shadow-xl transition-all active:scale-[0.98] ${isNavigating ? 'bg-red-500 shadow-red-100 animate-pulse' : 'bg-slate-900 shadow-slate-200'} text-sm uppercase tracking-widest`}>
+            <button onClick={onStartJourney} disabled={!isNavigating && stops.every(s => s.status === 'completed' || s.status === 'failed')} className={`w-full py-4 rounded-xl font-black text-white shadow-xl transition-all active:scale-[0.98] ${isNavigating ? 'bg-red-500 shadow-red-100 animate-pulse' : 'bg-slate-900 shadow-slate-200'} text-sm uppercase tracking-widest`}>
               {isNavigating ? "Finish Workday" : "Start Route"}
             </button>
           )}

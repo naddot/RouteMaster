@@ -4,6 +4,8 @@ import { DeliveryStop, RouteStatus, UserLocation } from '../types';
 import { INITIAL_MAP_CENTER, DEFAULT_ZOOM } from '../constants';
 import { normalizePostcode } from '../config';
 
+import { useGoogleMaps } from '../hooks/useGoogleMaps';
+
 interface MapProps {
   apiKey: string;
   stops: DeliveryStop[];
@@ -60,7 +62,8 @@ const Map: React.FC<MapProps> = ({
   // One InfoWindow reused for all markers
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
 
-  const [isLoaded, setIsLoaded] = useState(false);
+  const { mode, error: loadError } = useGoogleMaps();
+  const isLoaded = mode === 'places';
   const [autoCenter, setAutoCenter] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
 
@@ -156,60 +159,94 @@ const Map: React.FC<MapProps> = ({
     return () => clearTimeout(handler);
   }, [customEndAddress, customStartAddress]);
 
+  // Map initialization effect
   useEffect(() => {
-    if (!apiKey || isLoaded) return;
-    if (window.google?.maps && typeof window.google.maps.Map === 'function') {
-      setIsLoaded(true);
+    if (loadError) {
+      console.error("Map load error:", loadError);
       return;
     }
-    const scriptId = 'google-maps-script';
-    if (document.getElementById(scriptId)) return;
-    const callbackName = `initMap_${Date.now()}`;
-    (window as any)[callbackName] = () => {
-      setIsLoaded(true);
-      delete (window as any)[callbackName];
-    };
-    const script = document.createElement('script');
-    script.id = scriptId;
 
-    // Conditionlly load Places library
-    const PLACES_ENABLED = import.meta.env.VITE_GOOGLE_PLACES_ENABLED === "true";
-    const libs = PLACES_ENABLED ? "marker,places" : "marker";
+    if (!isLoaded || !mapRef.current || mapInstanceRef.current) return;
 
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=${libs}&v=weekly&loading=async&callback=${callbackName}`;
-    script.async = true;
-    script.defer = true;
-    document.head.appendChild(script);
-  }, [apiKey, isLoaded]);
+    const initMap = async () => {
+      try {
+        const { Map } = await google.maps.importLibrary("maps") as google.maps.MapsLibrary;
+        const { AdvancedMarkerElement } = await google.maps.importLibrary("marker") as google.maps.MarkerLibrary;
 
-  useEffect(() => {
-    if (isLoaded && mapRef.current && !mapInstanceRef.current) {
-      const mapId = import.meta.env.VITE_GOOGLE_MAP_ID;
-      if (!mapId) {
-        throw new Error("VITE_GOOGLE_MAP_ID missing. Advanced Markers require a valid Map ID in frontend/.env.local");
+        const mapId = import.meta.env.VITE_GOOGLE_MAP_ID;
+        console.log("Initializing map with ID:", mapId);
+
+        const map = new Map(mapRef.current!, {
+          center: INITIAL_MAP_CENTER,
+          zoom: DEFAULT_ZOOM,
+          disableDefaultUI: false,
+          clickableIcons: false,
+          mapId: mapId,
+          zoomControl: true,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+        });
+
+        mapInstanceRef.current = map;
+
+        // Add markers
+        stops.forEach((stop) => {
+          if (stop.lat && stop.lng) {
+            const markerFunc = async () => {
+              const markerContent = document.createElement('div');
+              markerContent.className = 'w-6 h-6 rounded-full bg-blue-500 border-2 border-white shadow-lg flex items-center justify-center text-white text-xs font-bold';
+              markerContent.textContent = String(stop.id);
+
+              const marker = new AdvancedMarkerElement({
+                map: map,
+                position: { lat: stop.lat, lng: stop.lng },
+                title: stop.formattedAddress || stop.rawAddress,
+                content: markerContent,
+              });
+
+              // The original code uses markerPoolRef.current.push(marker);
+              // Assuming 'id' is unique for stops, we'll use it as key for markerPoolRef
+              markerPoolRef.current.set(stop.id, marker);
+            };
+            markerFunc();
+          }
+        });
+
+        // Fit bounds if stops exist
+        if (stops.length > 0) {
+          const bounds = new google.maps.LatLngBounds();
+          stops.forEach((stop) => {
+            if (stop.lat && stop.lng) {
+              bounds.extend({ lat: stop.lat, lng: stop.lng });
+            }
+          });
+          map.fitBounds(bounds);
+        }
+
+        // Initialize DirectionsRenderer and TrafficLayer as they were in the original code
+        const trafficLayer = new google.maps.TrafficLayer();
+        trafficLayer.setMap(map);
+        trafficLayerRef.current = trafficLayer;
+
+        const renderer = new google.maps.DirectionsRenderer({
+          map,
+          suppressMarkers: true,
+          suppressPolylines: true,
+          preserveViewport: false
+        });
+        directionsRendererRef.current = renderer;
+
+        map.addListener('dragstart', () => setAutoCenter(false));
+
+      } catch (error) {
+        console.error("Error initializing map:", error);
       }
+    };
 
-      const map = new google.maps.Map(mapRef.current, {
-        center: INITIAL_MAP_CENTER,
-        zoom: DEFAULT_ZOOM,
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: false,
-        zoomControl: false,
-        gestureHandling: "greedy",
-        mapId: mapId, // Strict Map ID
-      });
+    initMap();
 
-      map.addListener('dragstart', () => setAutoCenter(false));
-      const trafficLayer = new google.maps.TrafficLayer();
-      trafficLayer.setMap(map);
-      trafficLayerRef.current = trafficLayer;
-      const renderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: true, suppressPolylines: true, preserveViewport: false });
-      mapInstanceRef.current = map;
-      directionsRendererRef.current = renderer;
-    }
-  }, [isLoaded]);
-
+  }, [isLoaded, loadError, stops]); // Added stops to dependency array to ensure markers are added on initial load
   // Unmount cleanup
   useEffect(() => {
     return () => {

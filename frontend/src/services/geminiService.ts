@@ -10,7 +10,13 @@ export const parseAddressInput = async (input: string): Promise<DeliveryStop[]> 
 
     if (!response.ok) throw new Error('Failed to parse manifest');
 
-    return await response.json();
+    const data = await response.json();
+    if (!Array.isArray(data)) {
+      console.error("Gemini Parse returned non-array:", data);
+      throw new Error("Invalid response format from AI service");
+    }
+
+    return data;
   } catch (err) {
     console.error("Gemini Parse Error:", err);
     throw err;
